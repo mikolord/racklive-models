@@ -15,7 +15,21 @@
    "license": "own",
    "author": "Rack Live",
    "notes": "Нарисована для проверки магазина"
+  },
+  {
+   "id": "kennetick-kn1810",
+   "path": "models/kennetick/kennetick-kn1810",
+   "vendor": "kennetick",
+   "model": "KN1810",
+   "title": "KN 1810 Sfp",
+   "kind": "router",
+   "ports": 6,
+   "photo": "photo.webp",
+   "model3d": true,
+   "license": "own",
+   "author": "",
+   "notes": "с sfp портом"
   }
  ],
- "count": 1
+ "count": 2
 }
