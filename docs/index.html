@@ -40,6 +40,11 @@ input[type=range] { width: 100%; }
 .pt b { position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--warn); border: 2px solid #fff; display: none; touch-action: none; }
 .pt.sel b { display: block; }
 .zn { position: absolute; border: 2px dashed var(--zoom); background: color-mix(in srgb, var(--zoom) 14%, transparent); pointer-events: none; }
+.lp { position: fixed; width: 132px; height: 132px; border-radius: 50%; overflow: hidden; z-index: 100; pointer-events: none; border: 3px solid #fff; background: #0c0d0f; box-shadow: 0 10px 28px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.2); display: none; }
+.lp canvas { width: 126px; height: 126px; display: block; }
+.lp-x { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 1.5px solid var(--accent); box-shadow: 0 0 0 1px rgba(255,255,255,.6); }
+.lp-x::before, .lp-x::after { content: ""; position: absolute; background: var(--accent); }
+.lp-x::before { left: 50%; top: -7px; bottom: -7px; width: 1.5px; margin-left: -.75px; } .lp-x::after { top: 50%; left: -7px; right: -7px; height: 1.5px; margin-top: -.75px; }
 .draft { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); pointer-events: none; }
 .list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
 .li { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; } .li:last-child { border: 0; } .li.sel { background: color-mix(in srgb, var(--warn) 18%, transparent); }
@@ -195,7 +200,7 @@ const AI_PROMPT = `Ты помогаешь разметить порты на ф
 const REPO = 'mikolord/racklive-models';
 const $ = id => document.getElementById(id);
 const S = { tab: 0, photo: null, orig: null, bgTol: 40, bgOn: false, crop: true, work: null, photoFile: null, photoBlob: null, px: null,
-  spots: [], zoom: null, sel: null, kind: 'rj45', mode: 'draw', vendor: '', model: '', title: '', kind0: 'switch', notes: '', license: 'own', author: '', source: '', rights: false, model3d: null, previewZoom: false, msg: '' };
+  spots: [], zoom: null, sel: null, kind: 'rj45', size: 4, mode: 'draw', vendor: '', model: '', title: '', kind0: 'switch', notes: '', license: 'own', author: '', source: '', rights: false, model3d: null, previewZoom: false, msg: '' };
 const TABS = ['① Фото', '② Порты', '③ Приближение', '④ Описание', '⑤ Отправка'];
 const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), zoomer = $('zoomer');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -268,35 +273,64 @@ async function encodePhoto() {       // WebP (если браузер умеет
   render(true);
 }
 
-/* --- рисование на фото --- */
+/* --- рисование на фото ---
+   Порты — как в Rack Live: коснитесь и ведите палец, над ним появится лупа, метка встанет там, где отпустите.
+   Метку рядом (в пределах ~1 см) можно взять и перетащить. Зона приближения — прямоугольник, как раньше. */
 let drag = null;
-const rel = ev => { const r = ov.getBoundingClientRect(); return { x: clamp((ev.clientX - r.left) / r.width, 0, 1), y: clamp((ev.clientY - r.top) / r.height, 0, 1), r }; };
+const rel = ev => { const r = ov.getBoundingClientRect(); return { x: clamp((ev.clientX - r.left) / r.width, 0, 1), y: clamp((ev.clientY - r.top) / r.height, 0, 1), r, cx: ev.clientX, cy: ev.clientY }; };
+const spotW = () => S.size / 100;
+const spotH = () => S.size / 100 * (S.work ? S.work.width / S.work.height : 1);
+function hitSpot(p) {                 // ближайшая метка в пределах ~1 см от пальца
+  let best = null, bd = 1e9;
+  for (const s of S.spots) { const d = Math.hypot((s.x - p.x) * p.r.width, (s.y - p.y) * p.r.height), lim = Math.max(30, s.w * p.r.width / 2 + 16); if (d < lim && d < bd) { bd = d; best = s; } }
+  return best;
+}
+/* круглая лупа над пальцем: что под ним, в 2.6 раза крупнее, с прицелом в центре */
+const LP = { Z: 2.6, S: 132, el: null, c: null };
+function loupe(p, ghost) {
+  if (!LP.el) { LP.el = document.createElement('div'); LP.el.className = 'lp'; LP.c = document.createElement('canvas'); LP.c.width = LP.c.height = LP.S * 2; LP.el.appendChild(LP.c); LP.el.appendChild(Object.assign(document.createElement('i'), { className: 'lp-x' })); document.body.appendChild(LP.el); }
+  const Z = LP.Z, W = p.r.width, H = p.r.height, K = 2 * Z, fx = p.x * W, fy = p.y * H, g = LP.c.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#e6e8ec'; g.fillRect(0, 0, LP.S * 2, LP.S * 2); g.fillStyle = '#f7f8fa';
+  for (let i = 0; i < 17; i++) for (let j = 0; j < 17; j++) if ((i + j) & 1) g.fillRect(i * 16, j * 16, 16, 16);
+  g.setTransform(K, 0, 0, K, LP.S - fx * K, LP.S - fy * K); g.drawImage(S.work, 0, 0, W, H);
+  g.lineWidth = 2 / Z;
+  for (const s of S.spots.concat(ghost ? [ghost] : [])) { const x = (s.x - s.w / 2) * W, y = (s.y - s.h / 2) * H, w = s.w * W, h = s.h * H, gh = s === ghost;
+    g.fillStyle = gh ? 'rgba(47,111,237,.3)' : 'rgba(47,111,237,.2)'; g.strokeStyle = S.sel === s.n && !gh ? '#e08a00' : '#2f6fed'; g.setLineDash(gh ? [4 / Z, 3 / Z] : []); g.fillRect(x, y, w, h); g.strokeRect(x, y, w, h); }
+  const R = LP.S / 2; LP.el.style.display = 'block';
+  LP.el.style.left = clamp(p.cx - R, 4, window.innerWidth - LP.S - 4) + 'px'; LP.el.style.top = (p.cy > 210 ? p.cy - 178 : p.cy + 48) + 'px';
+}
+const hideLoupe = () => { if (LP.el) LP.el.style.display = 'none'; };
+function ghostAt(p) { return fitSpot({ n: 0, x: p.x, y: p.y, w: spotW(), h: spotH() }); }
 ov.addEventListener('pointerdown', ev => {
   if (!S.work || S.tab === 0 || S.tab === 3 || S.tab === 4) return; ev.preventDefault();
   const p = rel(ev), t = ev.target; try { ov.setPointerCapture(ev.pointerId); } catch (e) { }
   if (S.tab === 1 && t.dataset.h) { drag = { type: 'resize', n: +t.dataset.h }; return; }
-  if (S.tab === 1 && t.dataset.n) { const s = S.spots.find(q => q.n === +t.dataset.n); S.sel = s.n; drag = { type: 'move', n: s.n, dx: s.x - p.x, dy: s.y - p.y }; render(true); return; }
-  drag = { type: S.tab === 1 ? 'new' : 'zoom', x0: p.x, y0: p.y, x1: p.x, y1: p.y }; drawDraft();
+  if (S.tab === 1) {
+    const hit = hitSpot(p);
+    if (hit) { S.sel = hit.n; drag = { type: 'move', n: hit.n, dx: hit.x - p.x, dy: hit.y - p.y }; render(true); loupe(p); return; }
+    drag = { type: 'new', x1: p.x, y1: p.y }; drawDraft(); loupe(p, ghostAt(p)); return;
+  }
+  drag = { type: 'zoom', x0: p.x, y0: p.y, x1: p.x, y1: p.y }; drawDraft();
 });
 ov.addEventListener('pointermove', ev => {
   if (!drag) return; const p = rel(ev);
-  if (drag.type === 'move') { const i = S.spots.findIndex(q => q.n === drag.n); S.spots[i] = fitSpot({ ...S.spots[i], x: p.x + drag.dx, y: p.y + drag.dy }); paintOverlay(); return; }
+  if (drag.type === 'move') { const i = S.spots.findIndex(q => q.n === drag.n); S.spots[i] = fitSpot({ ...S.spots[i], x: p.x + drag.dx, y: p.y + drag.dy }); paintOverlay(); loupe(p); return; }
   if (drag.type === 'resize') { const i = S.spots.findIndex(q => q.n === drag.n), s = S.spots[i]; S.spots[i] = fitSpot({ ...s, w: Math.abs(p.x - s.x) * 2, h: Math.abs(p.y - s.y) * 2 }); paintOverlay(); return; }
+  if (drag.type === 'new') { drag.x1 = p.x; drag.y1 = p.y; drawDraft(); loupe(p, ghostAt(p)); return; }
   drag.x1 = p.x; drag.y1 = p.y; drawDraft();
 });
-const endDrag = ev => {
-  if (!drag) return; const d = drag; drag = null; $('draft') && $('draft').remove();
-  if (d.type === 'new' || d.type === 'zoom') {
+const endDrag = (ev, cancel) => {
+  if (!drag) return; const d = drag; drag = null; $('draft') && $('draft').remove(); hideLoupe();
+  if (d.type === 'new' && !cancel) { if (S.spots.length < LIMITS.maxSpots) { const s = fitSpot({ n: nextN(S.spots), x: d.x1, y: d.y1, w: spotW(), h: spotH(), kind: S.kind, label: '' }); S.spots.push(s); S.sel = s.n; } }
+  else if (d.type === 'zoom' && !cancel) {
     const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
-    if (w > .004 && h > .004) {
-      if (d.type === 'new') { if (S.spots.length < LIMITS.maxSpots) { const s = fitSpot({ n: nextN(S.spots), x: x + w / 2, y: y + h / 2, w, h, kind: S.kind, label: '' }); S.spots.push(s); S.sel = s.n; } }
-      else S.zoom = fitZoom({ x, y, w, h });
-    } else if (d.type === 'new') S.sel = null;
+    if (w > .004 && h > .004) S.zoom = fitZoom({ x, y, w, h });
   }
   render(true);
 };
-ov.addEventListener('pointerup', endDrag); ov.addEventListener('pointercancel', endDrag);
+ov.addEventListener('pointerup', ev => endDrag(ev)); ov.addEventListener('pointercancel', ev => endDrag(ev, true));
 function drawDraft() { let e = $('draft'); if (!e) { e = document.createElement('div'); e.id = 'draft'; e.className = 'draft'; ov.appendChild(e); }
+  if (drag.type === 'new') { const g = ghostAt({ x: drag.x1, y: drag.y1 }); Object.assign(e.style, { left: (g.x - g.w / 2) * 100 + '%', top: (g.y - g.h / 2) * 100 + '%', width: g.w * 100 + '%', height: g.h * 100 + '%', borderStyle: 'dashed' }); return; }
   const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1); Object.assign(e.style, { left: x * 100 + '%', top: y * 100 + '%', width: Math.abs(drag.x1 - drag.x0) * 100 + '%', height: Math.abs(drag.y1 - drag.y0) * 100 + '%' }); }
 function paintOverlay() {
   const keep = $('draft'); ov.innerHTML = '';
@@ -327,7 +361,8 @@ function panel() {
       <div class="row"><button class="btn pri" data-go="1">Дальше: порты →</button></div>` : ''}
     ${S.msg ? `<p style="color:var(--bad)">${esc(S.msg)}</p>` : ''}</div>`;
   if (t === 1) return `<div class="card"><h2>Порты</h2>
-    <p class="dim">Обведите порт пальцем или мышью — появится рамка с номером. Потяните рамку, чтобы сдвинуть, за кружок в углу — изменить размер.</p>
+    <p class="dim">Коснитесь фото там, где порт, и ведите палец: над ним появится лупа, метка встанет там, где отпустите. Готовую метку можно взять пальцем рядом с ней и перетащить; касание выбирает её номер.</p>
+    <label class="f">Размер меток (все сразу): <b id="pszv">${S.size}</b> % ширины <input type="range" id="psz" min="1.5" max="12" step="0.25" value="${S.size}"></label>
     <div class="row"><select id="pk">${opts(PORT_RU, S.kind)}</select><button class="btn" id="ai">Разметить с помощью ИИ…</button></div>
     ${selPanel()}
     <div class="row"><button class="btn" id="rn1">Нумерация по строкам</button><button class="btn" id="rn2">Нумерация по колонкам</button></div>
@@ -379,7 +414,7 @@ function render(keepFocus) {
   $('tabs').innerHTML = TABS.map((n, i) => `<button class="tab${i === S.tab ? ' on' : ''}" data-t="${i}" ${i > 0 && !S.work ? 'disabled' : ''}>${n}</button>`).join('');
   const act = keepFocus && document.activeElement && document.activeElement.id; const val = act && document.activeElement.value;
   $('side').innerHTML = panel(); paintOverlay();
-  $('hint').textContent = !S.work ? 'Загрузите фото, чтобы начать.' : S.tab === 2 ? 'Обведите прямоугольник приближения.' : S.tab === 1 ? 'Обведите порт, чтобы добавить его.' : '';
+  $('hint').textContent = !S.work ? 'Загрузите фото, чтобы начать.' : S.tab === 2 ? 'Обведите прямоугольник приближения.' : S.tab === 1 ? 'Коснитесь порта и ведите палец — метка встанет там, где отпустите.' : '';
   if (act && $(act) && 'value' in $(act) && $(act).type !== 'file') { $(act).focus(); try { $(act).setSelectionRange(val.length, val.length); } catch (e) { } }
 }
 document.addEventListener('click', ev => {
@@ -407,6 +442,7 @@ document.addEventListener('input', ev => {
   else if (id === 'crop') { S.crop = t.checked; S.spots = []; S.zoom = null; process(); render(); }
   else if (id === 'tol') { S.bgTol = +t.value; clearTimeout(S._tt); S._tt = setTimeout(() => { S.spots = []; S.zoom = null; process(); }, 150); }
   else if (id === 'pk') S.kind = t.value;
+  else if (id === 'psz') { S.size = +t.value; $('pszv').textContent = S.size; const k = S.work.width / S.work.height; S.spots = S.spots.map(s => fitSpot({ ...s, w: S.size / 100, h: S.size / 100 * k })); paintOverlay(); }
   else if (id === 'sk') { const s = S.spots.find(q => q.n === S.sel); if (s) { s.kind = t.value; render(true); } }
   else if (id === 'sl') { const s = S.spots.find(q => q.n === S.sel); if (s) s.label = t.value; }
   else if (id === 'sn') { const s = S.spots.find(q => q.n === S.sel), n = +t.value | 0; if (s && n >= 1 && n <= 256 && !S.spots.some(q => q.n === n)) { s.n = n; S.sel = n; } }
