@@ -1,0 +1,24 @@
+name: Предложить модель
+description: Отправить готовую модель устройства из редактора в каталог Rack Live
+title: "Модель: "
+labels: ["submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Сначала соберите модель в [редакторе](https://mikolord.github.io/racklive-models/) и скачайте `.zip`.
+        Бот проверит файл и откроет pull request, а владелец каталога его примет или напишет, что исправить.
+  - type: textarea
+    id: file
+    attributes:
+      label: Файл из редактора (.zip)
+      description: Перетащите .zip в это поле и дождитесь, пока он загрузится (появится ссылка).
+    validations:
+      required: true
+  - type: checkboxes
+    id: rights
+    attributes:
+      label: Права
+      options:
+        - label: Это моё фото, или у меня есть право его использовать и публиковать под указанной лицензией. Данные модели (точки портов, зона приближения) я согласен опубликовать в этом репозитории.
+          required: true
