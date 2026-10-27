@@ -1,0 +1,21 @@
+{
+ "format": "racklive-models-index",
+ "version": 1,
+ "models": [
+  {
+   "id": "demo-sw-8",
+   "path": "models/demo/demo-sw-8",
+   "vendor": "Demo",
+   "model": "SW-8",
+   "title": "Демонстрационная модель: коммутатор на 8 портов",
+   "kind": "switch",
+   "ports": 8,
+   "photo": "photo.png",
+   "model3d": false,
+   "license": "own",
+   "author": "Rack Live",
+   "notes": "Нарисована для проверки магазина"
+  }
+ ],
+ "count": 1
+}
